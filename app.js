@@ -4,10 +4,12 @@ const userModel = require('./models/user');
 const postModel = require('./models/post');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-// const path = require('path');
+const path = require('path');
 const cookieParser = require('cookie-parser');
-// const { log } = require('console');
+// const upload = require('./config/multerconfig');
+const upload = require('./config/multerconfig');
 
+app.use(express.static(path.join(__dirname, "public")));
 app.set("view engine", "ejs");
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
@@ -21,6 +23,20 @@ app.get("/", (req, res) => {
 //Login Page for User
 app.get("/login", (req, res) => {
     res.render("login");
+})
+
+//Profile Pic upload Page
+app.get("/profileupload", (req, res) => {
+    res.render("profileupload");
+})
+
+//Profile Pic upload
+app.post("/upload", isLoggedIn, upload.single("image"), async (req, res) => {
+    let user = await userModel.findOne({email: req.user.email});
+    user.profilepic = req.file.filename;
+    await user.save();
+    console.log(req.file);
+    res.redirect('/profile');
 })
 
 //Protected Profile Route
