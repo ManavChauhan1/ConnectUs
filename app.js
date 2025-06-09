@@ -151,4 +151,5 @@ function isLoggedIn(req, res, next){
     }
 }
 
+//Listen at Port 3000
 app.listen(3000);
