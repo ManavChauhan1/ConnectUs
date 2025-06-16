@@ -21,12 +21,13 @@ app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 app.use(cookieParser());
 
+
 // Enabling CORS
-// app.use(cors({
-//   origin: 'http://localhost:4200', // Angular frontend URL
-//   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-//   credentials: true, // Since we are using Cookies
-// }));
+app.use(cors({
+  origin: 'http://localhost:4200', // Angular frontend URL
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true, // Since we are using Cookies
+}));
 
 //Home Page
 app.get("/", (req, res) => {
@@ -62,13 +63,20 @@ app.post("/upload", isLoggedIn, upload.single("image"), async (req, res) => {
 })
 
 //Protected Profile Route
-app.get("/profile", isLoggedIn, async (req, res) => {
+app.get("/profile-web", isLoggedIn, async (req, res) => {
     let user = await userModel.findOne({email: req.user.email});
     await user.populate("posts");
     console.log(user.posts);
     
     res.render("profile", {user});
 })
+
+// For Angular (API call)
+app.get("/profile", isLoggedIn, async (req, res) => {
+  let user = await userModel.findOne({ email: req.user.email }).populate("posts");
+  const { password, ...safeUser } = user._doc;
+  res.json({ user: safeUser });
+});
 
 //For Liking a post
 app.get("/like/:id", isLoggedIn, async (req, res) => {
@@ -153,9 +161,11 @@ app.post("/register", async (req, res) => {
                     password : hash
                 });
 
-                let token = jwt.sign({email:email, userid: user._id}, "secret");
+                let token = jwt.sign({email:email, userid: user._id}, process.env.SECRET_KEY);
                 res.cookie("token", token);
-                res.send("Registered");
+                res.setHeader('Content-Type', 'application/json');
+                res.status(200).json({ message: "Registered" });
+
             })
         })
     }
