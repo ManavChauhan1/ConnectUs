@@ -12,7 +12,8 @@ require('dotenv').config();
 const upload = require('./config/multerconfig');
 
 //Importing module to validate input register data
-const { registerSchema } = require("./validators/validateUser")
+const { registerSchema } = require("./validators/validateUser");
+const { error } = require('console');
 
 //Middlewares
 app.use(express.static(path.join(__dirname, "public")));
@@ -96,16 +97,42 @@ app.get("/like/:id", isLoggedIn, async (req, res) => {
 
 //For Editing a post
 app.get("/edit/:id", isLoggedIn, async (req, res) => {
-    let post = await postModel.findOne({_id : req.params.id}).populate("user");
-    res.render("edit", {post});
-    
-    // res.redirect("/profile");
+    try{
+        let post = await postModel.findOne({_id : req.params.id}).populate("user");
+
+        if(!post){
+            return res.status(400).json({ message: "Post not found..." });
+        }
+
+        res.json(post);
+        // res.render("edit", {post});
+        
+        // res.redirect("/profile");
+
+    } catch(error){
+        res.status(500).json({ message: "Server Error", error });
+    }
 })
 
 //Route for Updating the Post
 app.post("/update/:id", isLoggedIn, async (req,res) => {
-    let post = await postModel.findOneAndUpdate({_id: req.params.id}, {content: req.body.content});
-    res.redirect("/feed");
+    // let post = await postModel.findOneAndUpdate({_id: req.params.id}, {content: req.body.content});
+    // res.redirect("/profile");
+    try{
+        const updatedPost = await postModel.findOneAndUpdate(
+            { _id:req.params.id },
+            { content: req.body.content },
+            { new: true }
+        );
+        if(!updatedPost){
+            return res.status(404).json({error: 'Post Not Found!!'})
+        }
+
+        res.json({success: true, post: updatedPost});
+    } catch(err){
+        console.error('Update Error:', err);
+        res.status(500).json({error: 'Something went wrong in updating post'})
+    }
 })
 
 //Create Post for only logged in customer
@@ -184,7 +211,7 @@ app.get('/logout', (req, res) => {
 function isLoggedIn(req, res, next){
     if(req.cookies.token === "") res.redirect("/login");
     else{
-        let data = jwt.verify(req.cookies.token, "secret");
+        let data = jwt.verify(req.cookies.token, process.env.SECRET_KEY);
         req.user = data;
         next();
     }
