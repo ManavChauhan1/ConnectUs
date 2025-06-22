@@ -26,28 +26,13 @@ app.use(cookieParser());
 // Enabling CORS
 app.use(cors({
   origin: 'http://localhost:4200', // Angular frontend URL
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE','PATCH'],
   credentials: true, // Since we are using Cookies
 }));
 
-//Home Page
-app.get("/", (req, res) => {
-    res.render("index");
-})
-
-//Login Page for User
-app.get("/login", (req, res) => {
-    res.render("login");
-})
-
-//Profile Pic upload Page
-app.get("/profileupload", (req, res) => {
-    res.render("profileupload");
-})
-
 //Feeds
 app.get("/feed", isLoggedIn, async(req, res) => {
-    let posts = await postModel.find({}).populate("user").sort({createdAt: -1});
+    let posts = await postModel.find({}).populate("user").sort({createdAt: 1});
 
     let user = await userModel.findById(req.user.userid);
 
@@ -55,21 +40,18 @@ app.get("/feed", isLoggedIn, async(req, res) => {
 })
 
 //Profile Pic upload
-app.post("/upload", isLoggedIn, upload.single("image"), async (req, res) => {
-    let user = await userModel.findOne({email: req.user.email});
-    user.profilepic = req.file.filename;
-    await user.save();
-    // console.log(req.file);
-    res.redirect('/profile');
-})
-
-//Protected Profile Route
-app.get("/profile-web", isLoggedIn, async (req, res) => {
-    let user = await userModel.findOne({email: req.user.email});
-    await user.populate("posts");
-    console.log(user.posts);
-    
-    res.render("profile", {user});
+app.post("/upload", isLoggedIn, upload.single('profilepic'), async (req, res) => {
+    try{
+        const user = await userModel.findOne({email: req.user.email});
+        user.profilepic = req.file.filename;
+        await user.save();
+        // console.log(req.file);
+        
+        res.status(200).json({ filename: req.file.filename });
+    } catch(error){
+        console.error("Upload Error", error);
+        res.status(500).json({ message: "Image Upload Failed", error });
+    }
 })
 
 // For Angular (API call)
@@ -79,21 +61,38 @@ app.get("/profile", isLoggedIn, async (req, res) => {
   res.json({ user: safeUser });
 });
 
-//For Liking a post
-app.get("/like/:id", isLoggedIn, async (req, res) => {
-    let post = await postModel.findOne({_id : req.params.id}).populate("user");
+// Like or Unlike a post
+app.patch("/:id/like", isLoggedIn, async (req, res) => {
+  try {
+    const post = await postModel.findById(req.params.id).populate("user");
 
-    //Liking or Unliking the Post
-    if(post.likes.indexOf(req.user.userid) === -1){
-        post.likes.push(req.user.userid);
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
     }
-    else{
-        post.likes.splice(post.likes.indexOf(req.user.userid), 1);
+
+    const userId = req.user.userid;
+
+    const index = post.likes.indexOf(userId);
+
+    if (index === -1) {
+      post.likes.push(userId); // Like
+    } else {
+      post.likes.splice(index, 1); // Unlike
     }
 
     await post.save();
-    res.redirect("/feed");
-})
+
+    res.status(200).json({ 
+      message: index === -1 ? "Post liked" : "Post unliked",
+      likesCount: post.likes.length 
+    });
+
+  } catch (error) {
+    console.error('error in like post',error)
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
 
 //For Editing a post
 app.get("/edit/:id", isLoggedIn, async (req, res) => {
@@ -105,9 +104,6 @@ app.get("/edit/:id", isLoggedIn, async (req, res) => {
         }
 
         res.json(post);
-        // res.render("edit", {post});
-        
-        // res.redirect("/profile");
 
     } catch(error){
         res.status(500).json({ message: "Server Error", error });
@@ -116,8 +112,6 @@ app.get("/edit/:id", isLoggedIn, async (req, res) => {
 
 //Route for Updating the Post
 app.post("/update/:id", isLoggedIn, async (req,res) => {
-    // let post = await postModel.findOneAndUpdate({_id: req.params.id}, {content: req.body.content});
-    // res.redirect("/profile");
     try{
         const updatedPost = await postModel.findOneAndUpdate(
             { _id:req.params.id },
@@ -137,34 +131,58 @@ app.post("/update/:id", isLoggedIn, async (req,res) => {
 
 //Create Post for only logged in customer
 app.post("/post", isLoggedIn, async (req, res) => {
-    let user = await userModel.findOne({email: req.user.email});
-    let {content} = req.body;
-    let post = await postModel.create({
-        user: user._id,
-        content
-    })
+    try{
+        let user = await userModel.findOne({email: req.user.email});
+        let {content} = req.body;
+        let post = await postModel.create({
+            user: user._id,
+            content
+        })
 
-    user.posts.push(post._id);
-    await user.save();
-    res.redirect("/profile");
+        user.posts.push(post._id);
+        await user.save();
+
+        res.status(201).json({ message: "Post created successfully..", post });
+    } catch(error){
+        res.status(500).json({ message: "Error creating Post", error });
+    }
+    
 })
 
 //Authentication
 app.post("/login", async (req, res) => {
-    let {email, password} = req.body;
+    const {email, password} = req.body;
 
-    let user = await userModel.findOne({email});
+    try{
+        let user = await userModel.findOne({email});
 
-    if(!user) return res.status(500).send("Something Went Wrong");
+        if(!user) return res.status(401).json({message: "Password or Email Invalid"});
 
-    bcrypt.compare(password, user.password, (err, result) => {
-        if(result) {
-            let token = jwt.sign({email:email, userid: user._id}, process.env.SECRET_KEY);
-            res.cookie("token", token);
-            res.status(200).redirect("/profile");
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+           return res.status(401).json({ message: "Invalid email or password" });
         }
-        else res.redirect("/login");
-    })
+
+        const token = jwt.sign(
+            { email: user.email, userid: user._id },
+            process.env.SECRET_KEY,
+            { expiresIn: "1d" }
+        );
+
+         res.status(200).json({
+            message: "Login successful",
+            token,
+            user: {
+                _id: user._id,
+                email: user.email,
+                username: user.username // Include any fields you need
+            }
+        });
+    } catch(error){
+        console.error("Login error:", err);
+        res.status(500).json({ message: "Server error during login", error: err });
+    }
 })
 
 //To register User
@@ -174,47 +192,67 @@ app.post("/register", async (req, res) => {
         const data = registerSchema.parse(req.body);
         let {name, email, username, age, password} = req.body;
 
-        let user = await userModel.findOne({email});
+        let existingUser = await userModel.findOne({email});
 
-        if(user) return res.status(500).send("User already registered");
+        if(existingUser) return res.status(400).json({ message: "User already registered."});
 
-        bcrypt.genSalt(10, function(err, salt){
-            bcrypt.hash(password, salt, async function(err, hash){
-                let user = await userModel.create({
-                    username,
-                    name,
-                    email,
-                    age,
-                    password : hash
-                });
 
-                let token = jwt.sign({email:email, userid: user._id}, process.env.SECRET_KEY);
-                res.cookie("token", token);
-                res.setHeader('Content-Type', 'application/json');
-                res.status(200).json({ message: "Registered" });
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(password, salt);
 
-            })
+        const user = await userModel.create({
+            username,
+            name,
+            email,
+            age,
+            password: hash
+        })
+
+        const token = jwt.sign(
+            { email: user.email, userid: user._id},
+            process.env.SECRET_KEY,
+            {expiresIn: "1d"}
+        )
+
+        res.status(200).json({
+            message: "Registration Successful..",
+            token,
+            user: {
+                username: user.username,
+                email: user.email,
+                _id: user._id
+            }
         })
     }
     catch(err){
-        return res.status(400).json({error: err.errors});
+        console.error("Registration error:", err);
+        return res.status(400).json({ error: err.errors || "Invalid data" });
     }
 })
 
-//Logout User : i.e. Removing the Cookie
+//Logout User : i.e. Cookie is handled in local storage by angular
 app.get('/logout', (req, res) => {
-    res.cookie("token", "");
-    res.redirect("/login");
+    res.status(200).json({ message: "Logged out successfully" });
 })
 
 //Login Middleware : For protected routes
 function isLoggedIn(req, res, next){
-    if(req.cookies.token === "") res.redirect("/login");
-    else{
-        let data = jwt.verify(req.cookies.token, process.env.SECRET_KEY);
-        req.user = data;
-        next();
+    const authHeader = req.headers.authorization;
+
+    if(!authHeader || !authHeader.startsWith("Bearer ")){
+        return res.status(401).json({ message : "No Token Provided"});
     }
+
+    const token = authHeader.split(" ")[1];
+
+    try{
+        const decoded = jwt.verify(token, process.env.SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch(err){
+        return res.status(401).json({ message: "Invalid or Expired Token..." });
+    }
+
 }
 
 //Listen at Port 3000
