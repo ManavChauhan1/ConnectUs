@@ -30,14 +30,6 @@ app.use(cors({
   credentials: true, // Since we are using Cookies
 }));
 
-//Feeds
-app.get("/feed", isLoggedIn, async(req, res) => {
-    let posts = await postModel.find({}).populate("user").sort({createdAt: 1});
-
-    let user = await userModel.findById(req.user.userid);
-
-    res.render("feed", {posts, user});
-})
 
 //Profile Pic upload
 app.post("/upload", isLoggedIn, upload.single('profilepic'), async (req, res) => {
@@ -60,6 +52,33 @@ app.get("/profile", isLoggedIn, async (req, res) => {
   const { password, ...safeUser } = user._doc;
   res.json({ user: safeUser });
 });
+
+//Deleting Profile Route
+app.delete('/delete', isLoggedIn, async (req, res) => {
+    try{
+        const userId = req.user.userid;
+
+        const user = await userModel.findById(userId);
+        console.log(user);
+
+        if(!user) return res.status(404).json({ message: 'User not found.' });
+
+        if(user.profilepic){
+            const fs = require('fs');
+            const path = require('path');
+            const imagePath = path.join(__dirname, 'public', 'images', 'uploads', user.profilepic);
+            if(fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+        }
+
+        await postModel.deleteMany({user:userId});
+
+        await userModel.findByIdAndDelete(userId);
+        res.status(200).json({ message: 'Profile deleted successfully...' });
+    } catch(err){
+        console.log(err);
+        res.status(500).json({ error: 'Failed to delete profile...' });
+    }
+})
 
 // Like or Unlike a post
 app.patch("/:id/like", isLoggedIn, async (req, res) => {
@@ -92,7 +111,6 @@ app.patch("/:id/like", isLoggedIn, async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 });
-
 
 //For Editing a post
 app.get("/edit/:id", isLoggedIn, async (req, res) => {
@@ -227,6 +245,22 @@ app.post("/register", async (req, res) => {
     catch(err){
         console.error("Registration error:", err);
         return res.status(400).json({ error: err.errors || "Invalid data" });
+    }
+})
+
+//Getting feed for authorized User
+app.get('/feed', isLoggedIn, async (req, res) => {
+    try{
+        const posts = await postModel.find({})
+            .populate("user", "username", "profilepic")
+            .sort({ createdAt: -1 });
+
+            console.log(posts);
+            
+            const user = await userModel.findById(req.user.userid);
+            res.json({ user, posts });
+    } catch(err){
+        res.status(500).json({ error: 'Failed to fetch feed.' })
     }
 })
 
