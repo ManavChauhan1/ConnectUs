@@ -103,7 +103,7 @@ app.patch("/:id/like", isLoggedIn, async (req, res) => {
 
     res.status(200).json({ 
       message: index === -1 ? "Post liked" : "Post unliked",
-      likesCount: post.likes.length 
+      likes: post.likes
     });
 
   } catch (error) {
@@ -252,11 +252,11 @@ app.post("/register", async (req, res) => {
 app.get('/feed', isLoggedIn, async (req, res) => {
     try{
         const posts = await postModel.find({})
-            .populate("user", "username", "profilepic")
+            .populate("user", "username profilepic")
             .sort({ createdAt: -1 });
 
             console.log(posts);
-            
+
             const user = await userModel.findById(req.user.userid);
             res.json({ user, posts });
     } catch(err){
