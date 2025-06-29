@@ -13,7 +13,7 @@ const upload = require('./config/multerconfig');
 
 //Importing module to validate input register data
 const { registerSchema } = require("./validators/validateUser");
-const { error } = require('console');
+const generateQR = require('./qr-generator');
 
 //Middlewares
 app.use(express.static(path.join(__dirname, "public")));
@@ -21,6 +21,7 @@ app.set("view engine", "ejs");
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 app.use(cookieParser());
+app.use('/qr-codes', express.static(path.join(__dirname, 'qr-codes')));
 
 
 // Enabling CORS
@@ -288,6 +289,78 @@ function isLoggedIn(req, res, next){
     }
 
 }
+
+//Generating QR Code
+// app.post('/generate-qr', async (req, res) => {
+//   const { userId } = req.body;
+
+//   try {
+//     const user = await userModel.findById(userId);
+//     if (!user) return res.status(404).json({ message: 'User not found' });
+
+//     const qrPayload = JSON.stringify({
+//       userId: user._id,
+//       password: user.password 
+//     });
+
+//     const qrCodeDataURL = await QRCode.toDataURL(qrData);
+
+//     res.status(200).json({
+//       message: 'QR code generated with password',
+//       qrCode: qrCodeDataURL
+//     });
+//   } catch (err) {
+//     console.error('QR generation error:', err);
+//     res.status(500).json({ message: 'QR Generation failed' });
+//   }
+// });
+
+app.post('/generate-qr', async (req, res) => {
+  const { userId } = req.body;
+
+  try {
+    if (!userId) return res.status(400).json({ message: 'userId is required' });
+
+    const user = await userModel.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const qrToken = user.password;
+    await generateQR(userId, qrToken);
+
+    const qrImageUrl = `http://localhost:3000/qr-codes/${userId}.png`;
+    res.status(200).json({ qrCode: qrImageUrl });
+  } catch (err) {
+    console.error('QR generation failed:', err);
+    res.status(500).json({ message: 'QR generation failed' });
+  }
+});
+
+//Login using QR
+app.post('/qr-login', async (req, res) => {
+  const { userId, token } = req.body;
+
+  try {
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'QR data is incomplete' });
+    }
+
+    const user = await userModel.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (user.password !== token) {
+      return res.status(401).json({ message: 'Invalid QR Code' });
+    }
+
+    const jwtToken = jwt.sign({ userId: user._id, email: user.email }, process.env.SECRET_KEY, {
+      expiresIn: '1h'
+    });
+
+    res.status(200).json({ token: jwtToken, user });
+  } catch (err) {
+    console.error('QR Login failed:', err);
+    res.status(500).json({ message: 'QR login failed' });
+  }
+});
 
 //Listen at Port 3000
 app.listen(3000);
