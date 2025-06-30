@@ -14,6 +14,7 @@ const upload = require('./config/multerconfig');
 //Importing module to validate input register data
 const { registerSchema } = require("./validators/validateUser");
 const generateQR = require('./qr-generator');
+const generateBarcode = require('./barcode-generator');
 
 //Middlewares
 app.use(express.static(path.join(__dirname, "public")));
@@ -22,7 +23,7 @@ app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 app.use(cookieParser());
 app.use('/qr-codes', express.static(path.join(__dirname, 'qr-codes')));
-
+app.use('/bar-codes', express.static(path.join(__dirname, 'bar-codes')));
 
 // Enabling CORS
 app.use(cors({
@@ -325,13 +326,17 @@ app.post('/generate-qr', async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const qrToken = user.password;
+
     await generateQR(userId, qrToken);
+    await generateBarcode(userId, qrToken);
 
     const qrImageUrl = `http://localhost:3000/qr-codes/${userId}.png`;
-    res.status(200).json({ qrCode: qrImageUrl });
+    const barcodeUrl = `http://localhost:3000/bar-codes/${userId}.png`;
+
+    res.status(200).json({ qrCode: qrImageUrl, barcode: barcodeUrl });
   } catch (err) {
-    console.error('QR generation failed:', err);
-    res.status(500).json({ message: 'QR generation failed' });
+    console.error('QR/BarCode generation failed:', err);
+    res.status(500).json({ message: 'QR/BarCode generation failed' });
   }
 });
 
